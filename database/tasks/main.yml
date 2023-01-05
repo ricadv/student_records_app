@@ -1,0 +1,65 @@
+---
+- name: Update And Upgrade apt Packages
+  become: yes
+  apt:
+          upgrade: yes
+          update_cache: yes
+  tags: provision
+
+- name: Installing Software
+  become: yes
+  apt:
+          name:
+                  - acl
+                  - python3-pip
+                  - mysql-client
+                  - mysql-server
+  tags: db
+
+- name: Install PyMySQL
+  become: yes
+  pip:
+          name: pymysql
+          state: present
+  tags: db
+
+- name: Change mysqld.cnf Bind Address
+  become: yes
+  copy:
+          src: mysqld.cnf
+          dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+  register: mysql_cnf
+
+- name: Restart MySQL
+  when: mysql_cnf.changed == true
+  become: yes
+  systemd:
+          name: mysql
+          state: restarted
+          enabled: yes
+
+- name: Create Backend Database
+  become: yes
+  mysql_db:
+          name: "{{ db_name }}"
+          login_host: "{{ db_host }}"
+          login_user: root
+          login_password: ""
+          login_unix_socket: /run/mysqld/mysqld.sock
+          state: present
+  tags: db
+
+- name: Create Backend MySQL User
+  become: yes
+  mysql_user:
+          name: "{{ db_username }}"
+          password: "{{ db_password }}"
+          priv: "{{ db_name }}.*:ALL"
+          login_host: "{{ db_host }}"
+          login_user: root
+          login_password: ""
+          login_unix_socket: /run/mysqld/mysqld.sock
+          state: present
+          host: "%"
+
+  tags: db

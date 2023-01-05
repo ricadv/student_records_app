@@ -1,0 +1,176 @@
+---
+- name: Update And Upgrade apt Packages
+  become: yes
+  apt:
+          upgrade: yes
+          update_cache: yes
+  tags: provision
+
+- name: Installing Software
+  become: yes
+  apt:
+          name:
+                  - nginx
+                  - unzip
+                  - acl
+                  - python3-pip
+                  - libmysqlclient-dev
+                  - mysql-client
+                  - mysql-server
+  tags: provision
+
+- name: Adding Backend User
+  become: yes
+  user:
+          name: backend
+          home: /backend
+  tags: provision
+
+- name: Download The Zip Code
+  get_url:
+          url: https://github.com/timoguic/acit4640-py-mysql/archive/refs/heads/master.zip
+          dest: /tmp/source.zip
+  tags: db-config
+
+- name: Create Destination Directory To Unzip File
+  file:
+          path: /tmp/code
+          state: directory
+  tags: db-config
+
+- name: Unzip The File
+  unarchive:
+          src: /tmp/source.zip
+          dest: /tmp/code
+          remote_src: yes
+  tags: db-config
+
+- name: Create A Directory For Frontend Files
+  become: yes
+  file:
+          path: /frontend
+          state: directory
+          owner: "{{ ansible_ssh_user }}"
+  tags: provision
+
+- name: Copy Files To Frontend Directory
+  copy:
+          src: /tmp/code/acit4640-py-mysql-master/frontend/index.html
+          dest: /frontend/index.html
+          remote_src: yes
+  tags: provision
+
+- name: Change nginx Configuration
+  become: yes
+  copy:
+          src: default
+          dest: /etc/nginx/sites-available/default
+  register: nginx_default
+  tags: provision
+
+- name: Restart nginx
+  become: yes
+  when: nginx_default.changed == true
+  systemd:
+          name: nginx
+          state: restarted
+  tags: provision
+
+- name: Create A Directory For Backend Files
+  become: yes
+  file:
+          path: /backend/src
+          state: directory
+          owner: backend
+  tags: db-config
+
+- name: Copy Files To Backend Directory
+  become: yes
+  copy:
+          src: /tmp/code/acit4640-py-mysql-master/backend/
+          dest: /backend/src/
+          remote_src: yes
+  tags: provision
+
+- name: Install Requirements With Pip
+  become: yes
+  become_user: backend
+  pip:
+          requirements: /backend/src/requirements.txt
+  tags: now
+
+- name: Install PyMySQL
+  become: yes
+  pip:
+          name: pymysql
+          state: present
+  tags: now
+
+- name: Change Backend Configuration
+  become: yes
+  template:
+          src: backend.conf
+          dest: /backend/src/backend.conf
+  tags: now
+
+- name: Create Backend Service
+  become: yes
+  copy:
+          src: backend.service
+          dest: /etc/systemd/system/backend.service
+  register: backend_service
+  tags: now
+
+- name: Daemon Reload, Start And Enable Backend Service
+  when: backend_service.changed == true
+  become: yes
+  systemd:
+          name: backend
+          daemon-reload: yes
+          state: restarted
+          enabled: yes
+  tags: now
+
+- name: Change mysqld.cnf Bind Address
+  become: yes
+  copy:
+          src: mysqld.cnf
+          dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+  register: mysql_cnf
+
+- name: Restart MySQL
+  when: mysql_cnf.changed == true
+  become: yes
+  systemd:
+          name: mysql
+          state: restarted
+          enabled: yes
+
+- name: Check For Values In Item Table
+  become: yes
+  mysql_query:
+          login_host: "{{ db_host }}"
+          login_user: "{{ db_username }}"
+          login_db: "{{ db_name }}"
+          login_password: "{{ db_password }}"
+          # login_unix_socket: /run/mysqld/mysqld.sock
+          query: SELECT * FROM item WHERE bcit_id = %s
+          positional_args:
+                  - "{{ student_id }}"
+  register: mysql_select
+  tags: query, now
+
+- name: Insert Values In Backend Database
+  when: mysql_select.rowcount == [0]
+  become: yes
+  mysql_query:
+          login_host: "{{ db_host }}"
+          login_db: "{{ db_name }}"
+          login_user: "{{ db_username }}"
+          login_password: "{{ db_password }}"
+          #login_unix_socket: /run/mysqld/mysqld.sock
+          query: INSERT INTO item (name, bcit_id) values (%s, %s)
+          positional_args:
+                  - "{{ student_name }}"
+                  - "{{ student_id }}"
+  tags: query, now

@@ -1,0 +1,13 @@
+---
+plugin: aws_ec2
+regions:
+  - us-west-2
+
+keyed_groups:
+  - prefix: service
+    key: tags.Service
+
+hostnames:
+  - tag:Name
+compose:
+        ansible_host: public_ip_address

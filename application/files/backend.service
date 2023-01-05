@@ -1,0 +1,15 @@
+[Unit]
+Description=backend service for lab 4640 app
+After=network.target
+Requires=mysql
+
+[Service]
+WorkingDirectory=/backend/src
+Type=simple
+User=backend
+ExecStart=/backend/.local/bin/gunicorn wsgi:app -b 0.0.0.0:5000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

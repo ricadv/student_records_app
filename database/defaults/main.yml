@@ -1,0 +1,6 @@
+---
+db_host: 127.0.0.1
+db_name: backend
+db_username: acit4640
+db_password: rica2022
+# defaults file for database
